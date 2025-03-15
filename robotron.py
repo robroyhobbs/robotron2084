@@ -3,6 +3,7 @@ import random
 import math
 import os
 from particles import ParticleSystem, ScreenShake  # Add this import
+import asyncio
 
 # Initialize Pygame and its mixer
 pygame.init()
@@ -308,211 +309,223 @@ def handle_bullet_collision(bullet, enemy):
         return True
     return False
 
-while running:
-    # Event handling
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE:
-                paused = not paused
-        elif event.type == pygame.JOYBUTTONDOWN:
-            if event.button == 7:  # Start button on Xbox controller
-                paused = not paused
+# Replace the game loop with an async version
+async def game_loop():
+    global running, score, wave, enemies, humans_rescued, player_lives
 
-    if not paused:
-        # Get controller if available
-        controller = controllers[0] if controllers else None
-        
-        # Handle continuous keyboard input
-        keys = pygame.key.get_pressed()
-        
-        # Update player
-        player.update(keys, controller)
-        
-        # Handle shooting
-        if shoot_cooldown > 0:
-            shoot_cooldown -= 1
-        else:
-            bullet = player.try_shoot(controller)
-            if bullet:
-                bullets.append(bullet)
-                shoot_cooldown = SHOOT_DELAY
+    while running:
+        # Handle events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    global paused
+                    paused = not paused
+            elif event.type == pygame.JOYBUTTONDOWN:
+                if event.button == 7:  # Start button on Xbox controller
+                    paused = not paused
 
-        # Update invincibility
-        if invincible:
-            invincible_timer -= 1
-            if invincible_timer <= 0:
-                invincible = False
-
-        # Update and check bullets
-        for bullet in bullets[:]:
-            bullet.update()
-            if not (0 <= bullet.pos[0] <= WINDOW_SIZE[0] and 0 <= bullet.pos[1] <= WINDOW_SIZE[1]):
-                bullets.remove(bullet)
-                continue
+        if not paused:
+            # Get controller if available
+            controller = controllers[0] if controllers else None
             
+            # Handle continuous keyboard input
+            keys = pygame.key.get_pressed()
+            
+            # Update player
+            player.update(keys, controller)
+            
+            # Handle shooting
+            if shoot_cooldown > 0:
+                shoot_cooldown -= 1
+            else:
+                bullet = player.try_shoot(controller)
+                if bullet:
+                    bullets.append(bullet)
+                    shoot_cooldown = SHOOT_DELAY
+
+            # Update invincibility
+            if invincible:
+                invincible_timer -= 1
+                if invincible_timer <= 0:
+                    invincible = False
+
+            # Update and check bullets
+            for bullet in bullets[:]:
+                bullet.update()
+                if not (0 <= bullet.pos[0] <= WINDOW_SIZE[0] and 0 <= bullet.pos[1] <= WINDOW_SIZE[1]):
+                    bullets.remove(bullet)
+                    continue
+                
+                for enemy in enemies[:]:
+                    if handle_bullet_collision(bullet, enemy):
+                        player.power_up()
+                        
+                        # Update kill streak and score
+                        kill_streak += 1
+                        kill_streak_timer = STREAK_TIMEOUT
+                        
+                        # Base score + streak bonus + wave bonus + power level bonus
+                        kill_score = 100 * (1 + kill_streak * 0.1)  # 10% more for each kill in streak
+                        power_bonus = (player.power_level - 1) * 50  # 50 points extra per power level
+                        wave_bonus = wave * 10  # 10 points extra per wave
+                        score += int(kill_score + wave_bonus + power_bonus)
+                        break
+
+            # Update kill streak timer
+            if kill_streak_timer > 0:
+                kill_streak_timer -= 1
+            elif kill_streak > 0:
+                kill_streak = 0
+
+            # Update enemies
             for enemy in enemies[:]:
-                if handle_bullet_collision(bullet, enemy):
-                    player.power_up()
-                    
-                    # Update kill streak and score
-                    kill_streak += 1
-                    kill_streak_timer = STREAK_TIMEOUT
-                    
-                    # Base score + streak bonus + wave bonus + power level bonus
-                    kill_score = 100 * (1 + kill_streak * 0.1)  # 10% more for each kill in streak
-                    power_bonus = (player.power_level - 1) * 50  # 50 points extra per power level
-                    wave_bonus = wave * 10  # 10 points extra per wave
-                    score += int(kill_score + wave_bonus + power_bonus)
-                    break
+                enemy.update([player_pos[0] + PLAYER_SIZE/2, player_pos[1] + PLAYER_SIZE/2])
+                if enemy.rect.colliderect(player_rect) and not invincible:
+                    if death_sound:
+                        death_sound.play()
+                    player_lives -= 1
+                    if player_lives > 0:
+                        reset_player()
+                        # Clear nearby enemies to prevent instant death
+                        for e in enemies[:]:
+                            if (abs(e.pos[0] - player_pos[0]) < PLAYER_SIZE * 4 and 
+                                abs(e.pos[1] - player_pos[1]) < PLAYER_SIZE * 4):
+                                enemies.remove(e)
+                    else:
+                        running = False
 
-        # Update kill streak timer
-        if kill_streak_timer > 0:
-            kill_streak_timer -= 1
-        elif kill_streak > 0:
-            kill_streak = 0
+                # Check if enemy catches a human
+                for human in humans[:]:
+                    if enemy.rect.colliderect(human.rect):
+                        humans.remove(human)
+                        score -= 200
 
-        # Update enemies
-        for enemy in enemies[:]:
-            enemy.update([player_pos[0] + PLAYER_SIZE/2, player_pos[1] + PLAYER_SIZE/2])
-            if enemy.rect.colliderect(player_rect) and not invincible:
-                if death_sound:
-                    death_sound.play()
-                player_lives -= 1
-                if player_lives > 0:
-                    reset_player()
-                    # Clear nearby enemies to prevent instant death
-                    for e in enemies[:]:
-                        if (abs(e.pos[0] - player_pos[0]) < PLAYER_SIZE * 4 and 
-                            abs(e.pos[1] - player_pos[1]) < PLAYER_SIZE * 4):
-                            enemies.remove(e)
-                else:
-                    running = False
-
-            # Check if enemy catches a human
+            # Check for human rescue
             for human in humans[:]:
-                if enemy.rect.colliderect(human.rect):
+                if abs(player_pos[0] + PLAYER_SIZE/2 - human.pos[0]) < RESCUE_DISTANCE and \
+                   abs(player_pos[1] + PLAYER_SIZE/2 - human.pos[1]) < RESCUE_DISTANCE:
                     humans.remove(human)
-                    score -= 200
+                    humans_rescued += 1
+                    score += 500
+                    if rescue_sound:
+                        rescue_sound.play()
 
-        # Check for human rescue
-        for human in humans[:]:
-            if abs(player_pos[0] + PLAYER_SIZE/2 - human.pos[0]) < RESCUE_DISTANCE and \
-               abs(player_pos[1] + PLAYER_SIZE/2 - human.pos[1]) < RESCUE_DISTANCE:
-                humans.remove(human)
-                humans_rescued += 1
-                score += 500
-                if rescue_sound:
-                    rescue_sound.play()
+            # Spawn new enemies
+            enemy_spawn_timer -= 1
+            if enemy_spawn_timer <= 0:
+                side = random.randint(0, 3)
+                if side == 0:  # Top
+                    x = random.randint(0, WINDOW_SIZE[0])
+                    y = -20
+                elif side == 1:  # Right
+                    x = WINDOW_SIZE[0] + 20
+                    y = random.randint(0, WINDOW_SIZE[1])
+                elif side == 2:  # Bottom
+                    x = random.randint(0, WINDOW_SIZE[0])
+                    y = WINDOW_SIZE[1] + 20
+                else:  # Left
+                    x = -20
+                    y = random.randint(0, WINDOW_SIZE[1])
+                
+                enemies.append(Enemy(x, y))
+                enemy_spawn_timer = ENEMY_SPAWN_DELAY
 
-        # Spawn new enemies
-        enemy_spawn_timer -= 1
-        if enemy_spawn_timer <= 0:
-            side = random.randint(0, 3)
-            if side == 0:  # Top
-                x = random.randint(0, WINDOW_SIZE[0])
-                y = -20
-            elif side == 1:  # Right
-                x = WINDOW_SIZE[0] + 20
-                y = random.randint(0, WINDOW_SIZE[1])
-            elif side == 2:  # Bottom
-                x = random.randint(0, WINDOW_SIZE[0])
-                y = WINDOW_SIZE[1] + 20
-            else:  # Left
-                x = -20
-                y = random.randint(0, WINDOW_SIZE[1])
+            # Spawn new humans
+            human_spawn_timer -= 1
+            if human_spawn_timer <= 0 and len(humans) < 5:
+                humans.append(Human(
+                    random.randint(50, WINDOW_SIZE[0] - 50),
+                    random.randint(50, WINDOW_SIZE[1] - 50)
+                ))
+                human_spawn_timer = HUMAN_SPAWN_DELAY
+
+            # Update particles and screen shake
+            particle_system.update()
+            screen_shake.update()
+
+            # Clear the game surface
+            game_surface.fill(BLACK)
             
-            enemies.append(Enemy(x, y))
-            enemy_spawn_timer = ENEMY_SPAWN_DELAY
+            # Draw game elements on game_surface instead of screen
+            if not invincible or (invincible and pygame.time.get_ticks() // INVINCIBLE_FLASH_RATE % 2):
+                game_surface.blit(player_img, player_pos)
+            
+            for bullet in bullets:
+                bullet.draw(game_surface)
+            
+            for enemy in enemies:
+                enemy.draw(game_surface)
 
-        # Spawn new humans
-        human_spawn_timer -= 1
-        if human_spawn_timer <= 0 and len(humans) < 5:
-            humans.append(Human(
-                random.randint(50, WINDOW_SIZE[0] - 50),
-                random.randint(50, WINDOW_SIZE[1] - 50)
-            ))
-            human_spawn_timer = HUMAN_SPAWN_DELAY
+            for human in humans:
+                human.draw(game_surface)
 
-        # Update particles and screen shake
-        particle_system.update()
-        screen_shake.update()
+            # Draw particles
+            particle_system.draw(game_surface)
 
-        # Clear the game surface
-        game_surface.fill(BLACK)
+            # Draw UI elements
+            score_text = font.render(f"Score: {score}", True, WHITE)
+            humans_text = font.render(f"Humans Rescued: {humans_rescued}", True, GREEN)
+            wave_text = font.render(f"Wave: {wave}", True, YELLOW)
+            lives_text = font.render(f"Lives: {player_lives}", True, RED)
+            game_surface.blit(score_text, (10, 10))
+            game_surface.blit(humans_text, (10, 50))
+            game_surface.blit(wave_text, (10, 90))
+            game_surface.blit(lives_text, (10, 130))
+
+            if kill_streak > 1:
+                streak_text = font.render(f"Streak: x{kill_streak}", True, ORANGE)
+                game_surface.blit(streak_text, (10, 170))
+
+            if invincible:
+                inv_text = font.render(f"Invincible: {invincible_timer // 60 + 1}", True, YELLOW)
+                game_surface.blit(inv_text, (WINDOW_SIZE[0] - 150, 10))
+
+            # Apply screen shake and draw final frame
+            shaken_surface, offset = screen_shake.apply(game_surface)
+            screen.blit(shaken_surface, offset)
+
+        # Draw pause screen if paused
+        if paused:
+            # Create semi-transparent overlay
+            overlay = pygame.Surface(WINDOW_SIZE)
+            overlay.fill(BLACK)
+            overlay.set_alpha(128)
+            screen.blit(overlay, (0, 0))
+            
+            # Draw pause text
+            pause_text = big_font.render("PAUSED", True, YELLOW)
+            continue_text = font.render("Press SPACE to continue", True, WHITE)
+            
+            pause_rect = pause_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2 - 20))
+            continue_rect = continue_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2 + 20))
+            
+            screen.blit(pause_text, pause_rect)
+            screen.blit(continue_text, continue_rect)
         
-        # Draw game elements on game_surface instead of screen
-        if not invincible or (invincible and pygame.time.get_ticks() // INVINCIBLE_FLASH_RATE % 2):
-            game_surface.blit(player_img, player_pos)
+        pygame.display.flip()
+        clock.tick(60)
         
-        for bullet in bullets:
-            bullet.draw(game_surface)
-        
-        for enemy in enemies:
-            enemy.draw(game_surface)
+        # This is required for web compatibility
+        await asyncio.sleep(0)
 
-        for human in humans:
-            human.draw(game_surface)
-
-        # Draw particles
-        particle_system.draw(game_surface)
-
-        # Draw UI elements
-        score_text = font.render(f"Score: {score}", True, WHITE)
-        humans_text = font.render(f"Humans Rescued: {humans_rescued}", True, GREEN)
-        wave_text = font.render(f"Wave: {wave}", True, YELLOW)
-        lives_text = font.render(f"Lives: {player_lives}", True, RED)
-        game_surface.blit(score_text, (10, 10))
-        game_surface.blit(humans_text, (10, 50))
-        game_surface.blit(wave_text, (10, 90))
-        game_surface.blit(lives_text, (10, 130))
-
-        if kill_streak > 1:
-            streak_text = font.render(f"Streak: x{kill_streak}", True, ORANGE)
-            game_surface.blit(streak_text, (10, 170))
-
-        if invincible:
-            inv_text = font.render(f"Invincible: {invincible_timer // 60 + 1}", True, YELLOW)
-            game_surface.blit(inv_text, (WINDOW_SIZE[0] - 150, 10))
-
-        # Apply screen shake and draw final frame
-        shaken_surface, offset = screen_shake.apply(game_surface)
-        screen.blit(shaken_surface, offset)
-
-    # Draw pause screen if paused
-    if paused:
-        # Create semi-transparent overlay
-        overlay = pygame.Surface(WINDOW_SIZE)
-        overlay.fill(BLACK)
-        overlay.set_alpha(128)
-        screen.blit(overlay, (0, 0))
-        
-        # Draw pause text
-        pause_text = big_font.render("PAUSED", True, YELLOW)
-        continue_text = font.render("Press SPACE to continue", True, WHITE)
-        
-        pause_rect = pause_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2 - 20))
-        continue_rect = continue_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2 + 20))
-        
-        screen.blit(pause_text, pause_rect)
-        screen.blit(continue_text, continue_rect)
-    
+    # Game Over screen
+    screen.fill(BLACK)
+    game_over_text = font.render(f"Game Over! Final Score: {score}", True, WHITE)
+    rescued_text = font.render(f"Humans Rescued: {humans_rescued}", True, GREEN)
+    text_rect = game_over_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2))
+    rescued_rect = rescued_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2 + 40))
+    screen.blit(game_over_text, text_rect)
+    screen.blit(rescued_text, rescued_rect)
     pygame.display.flip()
-    clock.tick(60)
+    
+    # Wait a few seconds before quitting
+    await asyncio.sleep(3)
 
-# Game Over screen
-screen.fill(BLACK)
-game_over_text = font.render(f"Game Over! Final Score: {score}", True, WHITE)
-rescued_text = font.render(f"Humans Rescued: {humans_rescued}", True, GREEN)
-text_rect = game_over_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2))
-rescued_rect = rescued_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2 + 40))
-screen.blit(game_over_text, text_rect)
-screen.blit(rescued_text, rescued_rect)
-pygame.display.flip()
-
-# Wait a few seconds before quitting
-pygame.time.wait(3000)
+# Replace the main game loop with this
+if __name__ == '__main__':
+    asyncio.run(game_loop())
 
 # Quit Pygame
 pygame.quit()
