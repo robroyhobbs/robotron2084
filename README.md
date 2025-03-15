@@ -13,12 +13,14 @@ A Zelda-themed remake of the classic Robotron 2084 arcade game, built with Pytho
 - Human rescue mechanics
 - Score system with kill streaks and wave bonuses
 - Sound effects and visual feedback
+- Xbox controller support
 
 ## Requirements
 
 - Python 3.x
 - Pygame
 - NumPy (for sound generation)
+- Xbox controller (optional)
 
 ## Installation
 
@@ -54,9 +56,15 @@ python robotron.py
 
 ## Controls
 
+### Keyboard
 - WASD: Move Link
 - Arrow keys: Shoot arrows
 - Space: Pause game
+
+### Xbox Controller
+- Left stick: Move Link
+- Right stick: Aim and shoot arrows
+- Start button: Pause game
 
 ## Gameplay Tips
 
@@ -65,6 +73,7 @@ python robotron.py
 - Watch out for your power level timer - it resets if you don't shoot for 2 seconds
 - Clear waves for big score bonuses
 - You're invincible for a few seconds after losing a life
+- With the controller, you can move in one direction while shooting in another!
 
 ## License
 

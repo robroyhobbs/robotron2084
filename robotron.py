@@ -6,6 +6,7 @@ import os
 # Initialize Pygame and its mixer
 pygame.init()
 pygame.mixer.init()
+pygame.joystick.init()  # Initialize joystick support
 
 # Constants
 WINDOW_SIZE = (800, 600)
@@ -22,6 +23,18 @@ ORANGE = (255, 165, 0)
 # Set up the display first
 screen = pygame.display.set_mode(WINDOW_SIZE)
 pygame.display.set_caption("Robotron 2084")
+
+# Set up controller
+controllers = []
+for i in range(pygame.joystick.get_count()):
+    controller = pygame.joystick.Joystick(i)
+    controller.init()
+    controllers.append(controller)
+    print(f"Found controller: {controller.get_name()}")
+
+# Controller settings
+DEADZONE = 0.2  # Ignore small stick movements
+TRIGGER_THRESHOLD = 0.1  # Minimum trigger pull to register
 
 # Asset loading
 def load_image(name):
@@ -91,13 +104,63 @@ class Player:
         self.consecutive_hits = 0
         self.power_level = 1
         self.last_shot_time = 0
+        self.shoot_direction = [0, 0]  # For controller aiming
 
-    def update(self):
+    def update(self, keys, controller=None):
         # Update power reset timer
         current_time = pygame.time.get_ticks()
-        if current_time - self.last_shot_time > 2000:  # Reset power after 2 seconds of not shooting
+        if current_time - self.last_shot_time > 2000:
             self.consecutive_hits = 0
             self.power_level = 1
+
+        # Movement
+        move_x = 0
+        move_y = 0
+
+        if controller:
+            # Left stick movement
+            left_x = controller.get_axis(0)
+            left_y = controller.get_axis(1)
+            if abs(left_x) > DEADZONE:
+                move_x = left_x
+            if abs(left_y) > DEADZONE:
+                move_y = left_y
+
+            # Right stick aiming
+            right_x = controller.get_axis(3)
+            right_y = controller.get_axis(4)
+            if abs(right_x) > DEADZONE or abs(right_y) > DEADZONE:
+                self.shoot_direction = [right_x, right_y]
+            
+        else:
+            # Keyboard movement
+            if keys[pygame.K_a]: move_x = -1
+            if keys[pygame.K_d]: move_x = 1
+            if keys[pygame.K_w]: move_y = -1
+            if keys[pygame.K_s]: move_y = 1
+
+            # Keyboard aiming
+            if keys[pygame.K_LEFT]: self.shoot_direction = [-1, 0]
+            elif keys[pygame.K_RIGHT]: self.shoot_direction = [1, 0]
+            elif keys[pygame.K_UP]: self.shoot_direction = [0, -1]
+            elif keys[pygame.K_DOWN]: self.shoot_direction = [0, 1]
+
+        # Apply movement
+        self.pos[0] += move_x * self.speed
+        self.pos[1] += move_y * self.speed
+
+        # Keep player on screen
+        self.pos[0] = max(0, min(self.pos[0], WINDOW_SIZE[0] - PLAYER_SIZE))
+        self.pos[1] = max(0, min(self.pos[1], WINDOW_SIZE[1] - PLAYER_SIZE))
+        self.rect.x = self.pos[0]
+        self.rect.y = self.pos[1]
+
+        # Update global player position (for compatibility)
+        global player_pos
+        player_pos[0] = self.pos[0]
+        player_pos[1] = self.pos[1]
+        player_rect.x = self.pos[0]
+        player_rect.y = self.pos[1]
 
     def power_up(self):
         self.consecutive_hits += 1
@@ -106,6 +169,35 @@ class Player:
         elif self.consecutive_hits >= 3:
             self.power_level = 2
         self.last_shot_time = pygame.time.get_ticks()
+
+    def try_shoot(self, controller=None):
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_shot_time < 250:  # Minimum time between shots
+            return None
+
+        if controller:
+            # Right stick shooting
+            right_x = controller.get_axis(3)
+            right_y = controller.get_axis(4)
+            if abs(right_x) > DEADZONE or abs(right_y) > DEADZONE:
+                # Normalize the direction vector
+                length = math.sqrt(right_x * right_x + right_y * right_y)
+                dx = right_x / length
+                dy = right_y / length
+                bullet = Bullet(self.rect.centerx, self.rect.centery, dx, dy, self.power_level)
+                self.last_shot_time = current_time
+                return bullet
+        else:
+            # Keyboard shooting
+            if any(self.shoot_direction):
+                dx, dy = self.shoot_direction
+                length = math.sqrt(dx * dx + dy * dy)
+                dx /= length
+                dy /= length
+                bullet = Bullet(self.rect.centerx, self.rect.centery, dx, dy, self.power_level)
+                self.last_shot_time = current_time
+                return bullet
+        return None
 
 class Enemy:
     def __init__(self, x, y):
@@ -203,58 +295,34 @@ while running:
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
                 paused = not paused
+        elif event.type == pygame.JOYBUTTONDOWN:
+            if event.button == 7:  # Start button on Xbox controller
+                paused = not paused
 
     if not paused:
+        # Get controller if available
+        controller = controllers[0] if controllers else None
+        
+        # Handle continuous keyboard input
+        keys = pygame.key.get_pressed()
+        
+        # Update player
+        player.update(keys, controller)
+        
+        # Handle shooting
+        if shoot_cooldown > 0:
+            shoot_cooldown -= 1
+        else:
+            bullet = player.try_shoot(controller)
+            if bullet:
+                bullets.append(bullet)
+                shoot_cooldown = SHOOT_DELAY
+
         # Update invincibility
         if invincible:
             invincible_timer -= 1
             if invincible_timer <= 0:
                 invincible = False
-
-        # Handle continuous keyboard input
-        keys = pygame.key.get_pressed()
-        
-        # Movement with WASD
-        if keys[pygame.K_w]:
-            player_pos[1] -= PLAYER_SPEED
-        if keys[pygame.K_s]:
-            player_pos[1] += PLAYER_SPEED
-        if keys[pygame.K_a]:
-            player_pos[0] -= PLAYER_SPEED
-        if keys[pygame.K_d]:
-            player_pos[0] += PLAYER_SPEED
-
-        # Shooting with arrow keys (with cooldown)
-        if shoot_cooldown > 0:
-            shoot_cooldown -= 1
-        else:
-            bullet_x = player_pos[0] + PLAYER_SIZE // 2 - 8  # Center the arrow
-            bullet_y = player_pos[1] + PLAYER_SIZE // 2 - 4
-            
-            if keys[pygame.K_UP] or keys[pygame.K_DOWN] or keys[pygame.K_LEFT] or keys[pygame.K_RIGHT]:
-                dx = dy = 0
-                if keys[pygame.K_UP]: dy -= 1
-                if keys[pygame.K_DOWN]: dy += 1
-                if keys[pygame.K_LEFT]: dx -= 1
-                if keys[pygame.K_RIGHT]: dx += 1
-                
-                # Normalize diagonal shooting
-                if dx != 0 and dy != 0:
-                    magnitude = (dx**2 + dy**2)**0.5
-                    dx /= magnitude
-                    dy /= magnitude
-                
-                bullets.append(Bullet(bullet_x, bullet_y, dx, dy, player.power_level))
-                shoot_cooldown = SHOOT_DELAY
-
-        # Keep player on screen
-        player_pos[0] = max(0, min(player_pos[0], WINDOW_SIZE[0] - PLAYER_SIZE))
-        player_pos[1] = max(0, min(player_pos[1], WINDOW_SIZE[1] - PLAYER_SIZE))
-        player_rect.x = player_pos[0]
-        player_rect.y = player_pos[1]
-
-        # Update player power level
-        player.update()
 
         # Update and check bullets
         for bullet in bullets[:]:
@@ -265,7 +333,7 @@ while running:
             
             for enemy in enemies[:]:
                 if handle_bullet_collision(bullet, enemy):
-                    player.power_up()  # Power up on successful hit
+                    player.power_up()
                     
                     # Update kill streak and score
                     kill_streak += 1
