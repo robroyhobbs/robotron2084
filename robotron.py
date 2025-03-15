@@ -2,6 +2,7 @@ import pygame
 import random
 import math
 import os
+from particles import ParticleSystem, ScreenShake  # Add this import
 
 # Initialize Pygame and its mixer
 pygame.init()
@@ -22,7 +23,12 @@ ORANGE = (255, 165, 0)
 
 # Set up the display first
 screen = pygame.display.set_mode(WINDOW_SIZE)
+game_surface = pygame.Surface(WINDOW_SIZE)  # New surface for game rendering
 pygame.display.set_caption("Robotron 2084")
+
+# Initialize particle system and screen shake
+particle_system = ParticleSystem()
+screen_shake = ScreenShake()
 
 # Set up controller
 controllers = []
@@ -105,10 +111,19 @@ class Player:
         self.power_level = 1
         self.last_shot_time = 0
         self.shoot_direction = [0, 0]  # For controller aiming
+        self.last_trail_time = 0  # For particle trail effect
 
     def update(self, keys, controller=None):
-        # Update power reset timer
         current_time = pygame.time.get_ticks()
+        
+        # Create trail particles
+        if current_time - self.last_trail_time > 50:  # Control trail frequency
+            particle_system.create_trail(self.pos[0] + PLAYER_SIZE/2, 
+                                      self.pos[1] + PLAYER_SIZE/2, 
+                                      WHITE)
+            self.last_trail_time = current_time
+
+        # Update power reset timer
         if current_time - self.last_shot_time > 2000:
             self.consecutive_hits = 0
             self.power_level = 1
@@ -166,8 +181,10 @@ class Player:
         self.consecutive_hits += 1
         if self.consecutive_hits >= 6:
             self.power_level = 3
+            particle_system.create_power_up_effect(self.rect.centerx, self.rect.centery, RED)
         elif self.consecutive_hits >= 3:
             self.power_level = 2
+            particle_system.create_power_up_effect(self.rect.centerx, self.rect.centery, YELLOW)
         self.last_shot_time = pygame.time.get_ticks()
 
     def try_shoot(self, controller=None):
@@ -284,6 +301,10 @@ def handle_bullet_collision(bullet, enemy):
         bullets.remove(bullet)
         if explosion_sound:
             explosion_sound.play()
+        # Create explosion effect
+        particle_system.create_explosion(enemy.rect.centerx, enemy.rect.centery, 
+                                      (255, 100, 0))  # Orange explosion
+        screen_shake.start_shake(3)  # Small screen shake
         return True
     return False
 
@@ -414,64 +435,50 @@ while running:
             ))
             human_spawn_timer = HUMAN_SPAWN_DELAY
 
-    # Drawing
-    screen.fill(BLACK)
-    
-    # Draw game elements
-    if not invincible or (invincible and pygame.time.get_ticks() // INVINCIBLE_FLASH_RATE % 2):
-        screen.blit(player_img, player_pos)
-    
-    for bullet in bullets:
-        bullet.draw(screen)
-    
-    for enemy in enemies:
-        enemy.draw(screen)
+        # Update particles and screen shake
+        particle_system.update()
+        screen_shake.update()
 
-    for human in humans:
-        human.draw(screen)
-
-    # Draw score, humans rescued, wave, and lives
-    score_text = font.render(f"Score: {score}", True, WHITE)
-    humans_text = font.render(f"Humans Rescued: {humans_rescued}", True, GREEN)
-    wave_text = font.render(f"Wave: {wave}", True, YELLOW)
-    lives_text = font.render(f"Lives: {player_lives}", True, RED)
-    screen.blit(score_text, (10, 10))
-    screen.blit(humans_text, (10, 50))
-    screen.blit(wave_text, (10, 90))
-    screen.blit(lives_text, (10, 130))
-
-    # Draw kill streak if active
-    if kill_streak > 1:
-        streak_text = font.render(f"Streak: x{kill_streak}", True, ORANGE)
-        screen.blit(streak_text, (10, 170))
-
-    # Draw invincibility timer if active
-    if invincible:
-        inv_text = font.render(f"Invincible: {invincible_timer // 60 + 1}", True, YELLOW)
-        screen.blit(inv_text, (WINDOW_SIZE[0] - 150, 10))
-
-    # Check if all enemies are cleared to start new wave
-    if not enemies and not paused:
-        wave += 1
-        # Wave clear bonus
-        wave_clear_bonus = wave * 1000
-        score += wave_clear_bonus
+        # Clear the game surface
+        game_surface.fill(BLACK)
         
-        # Spawn more enemies each wave
-        enemies = [Enemy(
-            random.randint(-20, WINDOW_SIZE[0] + 20),
-            random.randint(-20, WINDOW_SIZE[1] + 20)
-        ) for _ in range(5 + wave)]
+        # Draw game elements on game_surface instead of screen
+        if not invincible or (invincible and pygame.time.get_ticks() // INVINCIBLE_FLASH_RATE % 2):
+            game_surface.blit(player_img, player_pos)
         
-        # Display wave start message and bonus
-        wave_start_text = big_font.render(f"Wave {wave}", True, YELLOW)
-        bonus_text = font.render(f"Wave Clear Bonus: +{wave_clear_bonus}", True, ORANGE)
-        wave_start_rect = wave_start_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2 - 20))
-        bonus_rect = bonus_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2 + 20))
-        screen.blit(wave_start_text, wave_start_rect)
-        screen.blit(bonus_text, bonus_rect)
-        pygame.display.flip()
-        pygame.time.wait(1500)  # Show bonus message a bit longer
+        for bullet in bullets:
+            bullet.draw(game_surface)
+        
+        for enemy in enemies:
+            enemy.draw(game_surface)
+
+        for human in humans:
+            human.draw(game_surface)
+
+        # Draw particles
+        particle_system.draw(game_surface)
+
+        # Draw UI elements
+        score_text = font.render(f"Score: {score}", True, WHITE)
+        humans_text = font.render(f"Humans Rescued: {humans_rescued}", True, GREEN)
+        wave_text = font.render(f"Wave: {wave}", True, YELLOW)
+        lives_text = font.render(f"Lives: {player_lives}", True, RED)
+        game_surface.blit(score_text, (10, 10))
+        game_surface.blit(humans_text, (10, 50))
+        game_surface.blit(wave_text, (10, 90))
+        game_surface.blit(lives_text, (10, 130))
+
+        if kill_streak > 1:
+            streak_text = font.render(f"Streak: x{kill_streak}", True, ORANGE)
+            game_surface.blit(streak_text, (10, 170))
+
+        if invincible:
+            inv_text = font.render(f"Invincible: {invincible_timer // 60 + 1}", True, YELLOW)
+            game_surface.blit(inv_text, (WINDOW_SIZE[0] - 150, 10))
+
+        # Apply screen shake and draw final frame
+        shaken_surface, offset = screen_shake.apply(game_surface)
+        screen.blit(shaken_surface, offset)
 
     # Draw pause screen if paused
     if paused:
