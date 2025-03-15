@@ -24,7 +24,7 @@ A Zelda-themed remake of the classic Robotron 2084 arcade game, built with Pytho
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/robotron2084.git
+git clone https://github.com/robroyhobbs/robotron2084.git
 cd robotron2084
 ```
 
