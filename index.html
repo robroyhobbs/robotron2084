@@ -47,10 +47,29 @@
             color: #ff4444;
             font-weight: bold;
         }
+        .progress {
+            width: 300px;
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            width: 0%;
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s ease;
+        }
     </style>
 </head>
 <body>
-    <div class="loading">Loading Robotron 2084...</div>
+    <div class="loading">
+        Loading Robotron 2084...
+        <div class="progress">
+            <div class="progress-bar"></div>
+        </div>
+    </div>
     <canvas id="canvas" width="800" height="600"></canvas>
     <div class="instructions">
         <h2>Controls:</h2>
@@ -61,52 +80,88 @@
     <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
     <script type="module">
         const loadingMessage = document.querySelector('.loading');
+        const progressBar = document.querySelector('.progress-bar');
         const canvas = document.getElementById('canvas');
+        
+        function updateProgress(message, percent) {
+            loadingMessage.firstChild.textContent = message;
+            progressBar.style.width = `${percent}%`;
+        }
+        
+        async function loadGameFiles(pyodide) {
+            const files = [
+                'robotron.py',
+                'particles.py',
+                'web_main.py'
+            ];
+            
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                updateProgress(`Loading ${file}...`, (i / files.length) * 100);
+                const response = await fetch(file);
+                const code = await response.text();
+                pyodide.runPython(`
+                    with open('${file}', 'w') as f:
+                        f.write('''${code}''')
+                `);
+            }
+        }
         
         async function initGame() {
             try {
                 // Initialize Pyodide
-                loadingMessage.textContent = "Loading Python environment...";
+                updateProgress("Loading Python environment...", 10);
                 const pyodide = await loadPyodide();
                 
                 // Mount virtual filesystem
-                loadingMessage.textContent = "Setting up game environment...";
+                updateProgress("Setting up game environment...", 30);
                 pyodide.runPython(`
                     import os
                     import sys
-                    os.makedirs('/game', exist_ok=True)
+                    
+                    # Create necessary directories
+                    os.makedirs('web/assets/images', exist_ok=True)
+                    os.makedirs('web/assets/sounds', exist_ok=True)
                 `);
                 
                 // Load required packages
-                loadingMessage.textContent = "Installing required packages...";
+                updateProgress("Installing required packages...", 50);
                 await pyodide.loadPackage(['numpy', 'pygame']);
                 
+                // Load game files
+                updateProgress("Loading game files...", 70);
+                await loadGameFiles(pyodide);
+                
                 // Initialize Pygame
-                loadingMessage.textContent = "Starting game...";
+                updateProgress("Starting game...", 90);
                 await pyodide.runPython(`
                     import pygame
                     import asyncio
                     
                     pygame.init()
                     pygame.display.set_mode((800, 600))
+                    
+                    import web_main
                 `);
                 
-                // Load game files
-                const response = await fetch('web_main.py');
-                const gameCode = await response.text();
-                
-                // Run the game
-                pyodide.runPython(gameCode);
-                
-                // Hide loading message
-                loadingMessage.style.display = 'none';
+                // Hide loading screen
+                updateProgress("Game ready!", 100);
+                setTimeout(() => {
+                    loadingMessage.style.display = 'none';
+                }, 500);
                 
                 // Focus canvas for keyboard input
                 canvas.focus();
                 
             } catch (error) {
                 console.error('Error:', error);
-                loadingMessage.innerHTML = `<div class="error">Error loading game:<br>${error.message}</div>`;
+                loadingMessage.innerHTML = `
+                    <div class="error">
+                        Error loading game:<br>
+                        ${error.message}<br><br>
+                        <small>Please try refreshing the page</small>
+                    </div>
+                `;
             }
         }
 
