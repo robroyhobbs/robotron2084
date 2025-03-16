@@ -15,6 +15,18 @@ GREEN = (0, 255, 0)
 YELLOW = (255, 255, 0)
 ORANGE = (255, 165, 0)
 
+# Initialize Pygame with web canvas
+pygame.display.init()
+pygame.font.init()
+
+# Get the canvas from the HTML document
+canvas = document.getElementById('canvas')
+canvas.width = WINDOW_SIZE[0]
+canvas.height = WINDOW_SIZE[1]
+
+# Set up the display
+screen = pygame.display.set_mode(WINDOW_SIZE, pygame.SRCALPHA, 32)
+
 class Player:
     def __init__(self, x, y):
         self.pos = [x, y]
@@ -104,9 +116,6 @@ class Bullet:
         pygame.draw.circle(surface, color, (int(self.pos[0]), int(self.pos[1])), 4)
 
 async def game_loop():
-    # Initialize Pygame
-    pygame.init()
-    screen = pygame.display.set_mode(WINDOW_SIZE)
     clock = pygame.time.Clock()
 
     # Game state
@@ -266,4 +275,7 @@ async def game_loop():
     pygame.display.flip()
     
     # Wait before quitting
-    await asyncio.sleep(3) 
+    await asyncio.sleep(3)
+
+# Start the game loop
+asyncio.create_task(game_loop()) 

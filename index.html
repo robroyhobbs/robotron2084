@@ -20,6 +20,9 @@
         #canvas {
             border: 2px solid #333;
             margin: 20px;
+            width: 800px;
+            height: 600px;
+            image-rendering: pixelated;
         }
         #loading {
             position: fixed;
@@ -69,26 +72,47 @@
         const loading = document.getElementById('loading');
 
         async function main() {
-            status.textContent = 'Loading Python...';
-            let pyodide = await loadPyodide();
-            
-            status.textContent = 'Loading Pygame...';
-            await pyodide.loadPackage("pygame");
-            
-            status.textContent = 'Loading game...';
-            const response = await fetch('game.py');
-            const gameCode = await response.text();
-            
-            status.textContent = 'Starting game...';
-            await pyodide.runPythonAsync(gameCode);
-            
-            loading.style.display = 'none';
+            try {
+                status.textContent = 'Loading Python...';
+                const pyodide = await loadPyodide({
+                    indexURL: "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/"
+                });
+
+                status.textContent = 'Loading Pygame...';
+                await pyodide.loadPackage(["pygame"]);
+                await pyodide.runPythonAsync(`
+                    import sys
+                    import asyncio
+                    import pygame
+                    pygame.init()
+                `);
+
+                status.textContent = 'Loading game...';
+                const response = await fetch('game.py');
+                if (!response.ok) {
+                    throw new Error(`Failed to load game.py: ${response.status} ${response.statusText}`);
+                }
+                const gameCode = await response.text();
+
+                status.textContent = 'Starting game...';
+                pyodide.globals.set('document', document);
+                await pyodide.runPythonAsync(gameCode);
+                loading.style.display = 'none';
+
+            } catch (error) {
+                console.error('Error:', error);
+                status.textContent = 'Error loading game: ' + error.message;
+            }
         }
 
-        main().catch(error => {
-            console.error('Error:', error);
-            status.textContent = 'Error loading game: ' + error.message;
+        // Prevent default keyboard actions
+        window.addEventListener('keydown', function(e) {
+            if(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+                e.preventDefault();
+            }
         });
+
+        main();
     </script>
 </body>
 </html>
