@@ -62,6 +62,7 @@
             transition: width 0.3s ease;
         }
     </style>
+    <script src="https://pygame-web.github.io/archives/0.9/pythons.js"></script>
 </head>
 <body>
     <div class="loading">
@@ -77,7 +78,6 @@
         <p>Xbox Controller: Left Stick to Move, Right Stick to Shoot, Start to Pause</p>
         <p><small>Click the game area to enable keyboard controls</small></p>
     </div>
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
     <script type="module">
         const loadingMessage = document.querySelector('.loading');
         const progressBar = document.querySelector('.progress-bar');
@@ -87,62 +87,25 @@
             loadingMessage.firstChild.textContent = message;
             progressBar.style.width = `${percent}%`;
         }
-        
-        async function loadGameFiles(pyodide) {
-            const files = [
-                'robotron.py',
-                'particles.py',
-                'web_main.py'
-            ];
-            
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                updateProgress(`Loading ${file}...`, (i / files.length) * 100);
-                const response = await fetch(file);
-                const code = await response.text();
-                pyodide.runPython(`
-                    with open('${file}', 'w') as f:
-                        f.write('''${code}''')
-                `);
-            }
-        }
-        
+
         async function initGame() {
             try {
-                // Initialize Pyodide
                 updateProgress("Loading Python environment...", 10);
-                const pyodide = await loadPyodide();
                 
-                // Mount virtual filesystem
+                // Initialize Python environment
+                await pythonjs.load();
                 updateProgress("Setting up game environment...", 30);
-                pyodide.runPython(`
-                    import os
-                    import sys
-                    
-                    # Create necessary directories
-                    os.makedirs('web/assets/images', exist_ok=True)
-                    os.makedirs('web/assets/sounds', exist_ok=True)
-                `);
                 
-                // Load required packages
-                updateProgress("Installing required packages...", 50);
-                await pyodide.loadPackage(['numpy', 'pygame']);
+                // Initialize Python
+                await pythonjs.init();
+                updateProgress("Loading game files...", 50);
                 
-                // Load game files
-                updateProgress("Loading game files...", 70);
-                await loadGameFiles(pyodide);
-                
-                // Initialize Pygame
+                // Load and run the game code
+                const response = await fetch('web_main.py');
+                const gameCode = await response.text();
                 updateProgress("Starting game...", 90);
-                await pyodide.runPython(`
-                    import pygame
-                    import asyncio
-                    
-                    pygame.init()
-                    pygame.display.set_mode((800, 600))
-                    
-                    import web_main
-                `);
+                
+                await pythonjs.exec(gameCode);
                 
                 // Hide loading screen
                 updateProgress("Game ready!", 100);

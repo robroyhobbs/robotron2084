@@ -23,20 +23,41 @@ from particles import ParticleSystem, ScreenShake
 
 async def main():
     try:
-        # Initialize game components
+        # Initialize Pygame
+        pygame.init()
+        pygame.mixer.init()
+        
+        # Set up display
         screen = pygame.display.set_mode((800, 600))
         pygame.display.set_caption("Robotron 2084 - Link Edition")
         
-        # Initialize systems
-        particle_system = ParticleSystem()
-        screen_shake = ScreenShake()
+        # Game loop
+        clock = pygame.time.Clock()
+        running = True
         
-        # Start the game loop
-        await robotron.game_loop()
-        
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+            
+            # Clear screen
+            screen.fill((0, 0, 0))
+            
+            # Draw a test rectangle
+            pygame.draw.rect(screen, (255, 255, 255), (100, 100, 50, 50))
+            
+            # Update display
+            pygame.display.flip()
+            
+            # Cap at 60 FPS
+            clock.tick(60)
+            
+            # Required for web
+            await asyncio.sleep(0)
+            
     except Exception as e:
         print(f"Error in web_main: {str(e)}")
         raise
 
-if __name__ == '__main__':
-    asyncio.run(main()) 
+# Start the game
+asyncio.run(main()) 
