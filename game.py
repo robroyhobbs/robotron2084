@@ -1,5 +1,4 @@
 import pygame
-import asyncio
 import random
 import math
 
@@ -15,17 +14,11 @@ GREEN = (0, 255, 0)
 YELLOW = (255, 255, 0)
 ORANGE = (255, 165, 0)
 
-# Initialize Pygame with web canvas
-pygame.display.init()
-pygame.font.init()
-
-# Get the canvas from the HTML document
-canvas = document.getElementById('canvas')
-canvas.width = WINDOW_SIZE[0]
-canvas.height = WINDOW_SIZE[1]
+# Initialize Pygame
+pygame.init()
 
 # Set up the display
-screen = pygame.display.set_mode(WINDOW_SIZE, pygame.SRCALPHA, 32)
+screen = pygame.display.set_mode(WINDOW_SIZE)
 
 class Player:
     def __init__(self, x, y):
@@ -115,7 +108,7 @@ class Bullet:
             color = RED
         pygame.draw.circle(surface, color, (int(self.pos[0]), int(self.pos[1])), 4)
 
-async def game_loop():
+def game_loop():
     clock = pygame.time.Clock()
 
     # Game state
@@ -142,7 +135,10 @@ async def game_loop():
     font = pygame.font.Font(None, 36)
     big_font = pygame.font.Font(None, 72)
 
-    while running:
+    def game_frame():
+        nonlocal running, paused, score, wave, player_lives, kill_streak
+        nonlocal invincible, invincible_timer, enemies, bullets
+
         # Event handling
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -263,19 +259,19 @@ async def game_loop():
         
         # Cap the frame rate
         clock.tick(60)
-        
-        # Required for web
-        await asyncio.sleep(0)
 
-    # Game Over screen
-    screen.fill(BLACK)
-    game_over_text = font.render(f"Game Over! Final Score: {score}", True, WHITE)
-    text_rect = game_over_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2))
-    screen.blit(game_over_text, text_rect)
-    pygame.display.flip()
-    
-    # Wait before quitting
-    await asyncio.sleep(3)
+        if running:
+            pygame.window.requestAnimationFrame(game_frame)
+        else:
+            # Game Over screen
+            screen.fill(BLACK)
+            game_over_text = font.render(f"Game Over! Final Score: {score}", True, WHITE)
+            text_rect = game_over_text.get_rect(center=(WINDOW_SIZE[0]/2, WINDOW_SIZE[1]/2))
+            screen.blit(game_over_text, text_rect)
+            pygame.display.flip()
 
-# Start the game loop
-asyncio.create_task(game_loop()) 
+    # Start the game loop
+    pygame.window.requestAnimationFrame(game_frame)
+
+# Start the game
+game_loop() 

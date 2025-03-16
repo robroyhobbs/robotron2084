@@ -49,6 +49,7 @@
             margin: 10px 0;
         }
     </style>
+    <script src="https://pygame-web.github.io/archives/0.9/pygame.js"></script>
 </head>
 <body>
     <div id="loading">
@@ -65,28 +66,17 @@
         <p>Pause: Space</p>
     </div>
 
-    <script type="module">
-        import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.mjs";
-
+    <script>
         const status = document.getElementById('status');
         const loading = document.getElementById('loading');
 
         async function main() {
             try {
-                status.textContent = 'Loading Python...';
-                const pyodide = await loadPyodide({
-                    indexURL: "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/"
-                });
-
                 status.textContent = 'Loading Pygame...';
-                await pyodide.loadPackage(["pygame"]);
-                await pyodide.runPythonAsync(`
-                    import sys
-                    import asyncio
-                    import pygame
-                    pygame.init()
-                `);
-
+                
+                // Initialize Pygame
+                await pygame.init();
+                
                 status.textContent = 'Loading game...';
                 const response = await fetch('game.py');
                 if (!response.ok) {
@@ -95,8 +85,7 @@
                 const gameCode = await response.text();
 
                 status.textContent = 'Starting game...';
-                pyodide.globals.set('document', document);
-                await pyodide.runPythonAsync(gameCode);
+                await pygame.runPython(gameCode);
                 loading.style.display = 'none';
 
             } catch (error) {
