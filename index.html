@@ -9,50 +9,86 @@
             margin: 0;
             padding: 0;
             background-color: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            color: #fff;
         }
         #canvas {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            border: 2px solid #333;
+            margin: 20px;
+        }
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .controls {
+            margin: 20px;
+            text-align: center;
+            max-width: 600px;
+        }
+        .controls h2 {
+            color: #0f0;
+        }
+        .controls p {
+            margin: 10px 0;
         }
     </style>
 </head>
 <body>
+    <div id="loading">
+        <h2>Loading Robotron 2084...</h2>
+        <p id="status">Initializing...</p>
+    </div>
+
     <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+
+    <div class="controls">
+        <h2>Controls</h2>
+        <p>Movement: WASD keys</p>
+        <p>Shooting: Arrow keys</p>
+        <p>Pause: Space</p>
+    </div>
+
     <script type="module">
         import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.mjs";
 
+        const status = document.getElementById('status');
+        const loading = document.getElementById('loading');
+
         async function main() {
+            status.textContent = 'Loading Python...';
             let pyodide = await loadPyodide();
+            
+            status.textContent = 'Loading Pygame...';
             await pyodide.loadPackage("pygame");
-            await pyodide.runPythonAsync(`
-                import pygame
-                import asyncio
-
-                async def game_loop():
-                    pygame.init()
-                    screen = pygame.display.set_mode((800, 600))
-                    clock = pygame.time.Clock()
-                    running = True
-
-                    while running:
-                        for event in pygame.event.get():
-                            if event.type == pygame.QUIT:
-                                running = False
-
-                        screen.fill((0, 0, 0))
-                        pygame.draw.rect(screen, (255, 0, 0), pygame.Rect(350, 250, 100, 100))
-                        pygame.display.flip()
-                        
-                        clock.tick(60)
-                        await asyncio.sleep(0)
-
-                asyncio.run(game_loop())
-            `);
+            
+            status.textContent = 'Loading game...';
+            const response = await fetch('game.py');
+            const gameCode = await response.text();
+            
+            status.textContent = 'Starting game...';
+            await pyodide.runPythonAsync(gameCode);
+            
+            loading.style.display = 'none';
         }
 
-        main();
+        main().catch(error => {
+            console.error('Error:', error);
+            status.textContent = 'Error loading game: ' + error.message;
+        });
     </script>
 </body>
 </html>
